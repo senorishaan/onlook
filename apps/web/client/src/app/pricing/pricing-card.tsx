@@ -28,7 +28,7 @@ export function PricingCard({ plan, basePrice, description, features, buttonText
     );
 
     const displayPrice = selectedTier ? `$${selectedTier.price}` : basePrice;
-    const priceSuffix = plan === 'Teams' ? '/member / month' : '/month';
+    const priceSuffix = plan === 'Teams' ? '/member/month' : '/month';
     const billingText = plan === 'Free' ? 'Never billed!' : 'Billed monthly';
 
     return (

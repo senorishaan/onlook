@@ -57,7 +57,7 @@ const plans: PlanData[] = [
         name: 'Teams',
         basePrice: '$30',
         description: 'Role based access with one consolidated management for your whole team.',
-        features: ['10M / month', 'Centralized billing'],
+        features: ['10M tokens / month', 'Centralized billing'],
         tokenTiers: tokenTiers,
     },
 ];
