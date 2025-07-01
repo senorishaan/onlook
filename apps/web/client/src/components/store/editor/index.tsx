@@ -19,7 +19,7 @@ export const EditorEngineProvider = ({ children, projectId }: {
         return () => {
             editorEngine.clear();
         };
-    }, [editorEngine]);
+    }, [editorEngine, projectId]);
 
     return (
         <EditorEngineContext.Provider value={editorEngine}>
