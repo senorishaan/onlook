@@ -1,5 +1,6 @@
+import { EditorEngineProvider } from '@/components/store/editor';
 import { Main } from './_components/main';
-import { ProjectProviders } from './providers';
+import { ChatProvider } from './_hooks/use-chat';
 
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
     const projectId = (await params).id;
@@ -8,8 +9,10 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
     }
 
     return (
-        <ProjectProviders projectId={projectId}>
-            <Main />
-        </ProjectProviders>
+        <EditorEngineProvider projectId={projectId}>
+            <ChatProvider>
+                <Main />
+            </ChatProvider>
+        </EditorEngineProvider>
     );
 }
