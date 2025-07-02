@@ -16,6 +16,7 @@ export const isBinaryFile = (filename: string): boolean => {
  */
 export interface FileOperations {
     readFile: (filePath: string) => Promise<string | null>;
+    readBinaryFile: (filePath: string) => Promise<Uint8Array | null>;
     writeFile: (filePath: string, content: string) => Promise<boolean>;
     fileExists: (filePath: string) => Promise<boolean>;
     delete: (filePath: string, recursive?: boolean) => Promise<boolean>;

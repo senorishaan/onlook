@@ -1,18 +1,5 @@
 import { z } from "zod";
 import { createTRPCRouter, publicProcedure } from "../../trpc";
-import { PublishStatus, type PublishOptions, type PublishState } from "@onlook/models";
-import { isNullOrUndefined, LogTimer, updateGitignore, type FileOperations } from "@onlook/utility";
-import { CUSTOM_OUTPUT_DIR, DefaultSettings } from "@onlook/constants";
-import { addBuiltWithScript, injectBuiltWithScript } from "@onlook/growth";
-import { addNextBuildConfig } from '@onlook/parser';
-import {
-    PublishStatus,
-    type DeploymentResponse,
-    type PublishOptions,
-    type PublishRequest,
-    type PublishResponse,
-    type PublishState,
-} from '@onlook/models';
 import { api } from '@/trpc/client';
 import { CUSTOM_OUTPUT_DIR, DefaultSettings, EXCLUDED_PUBLISH_DIRECTORIES, SUPPORTED_LOCK_FILES } from '@onlook/constants';
 import { addBuiltWithScript, injectBuiltWithScript, removeBuiltWithScript, removeBuiltWithScriptFromLayout } from '@onlook/growth';
@@ -87,7 +74,7 @@ const publish = async (
 
         if (!options?.skipBadge) {
             updateState({ status: PublishStatus.LOADING, message: 'Adding badge...', progress: 10 });
-            await addBadge('./');
+            await addBadge('./', fileOps);
             timer.log('"Built with Onlook" badge added');
         }
 
@@ -129,7 +116,7 @@ const publish = async (
 
         if (!options?.skipBadge) {
             updateState({ status: PublishStatus.LOADING, message: 'Cleaning up...', progress: 90 });
-            await removeBadge('./');
+            await removeBadge('./', fileOps);
             timer.log('"Built with Onlook" badge removed');
         }
 
@@ -150,16 +137,15 @@ const publish = async (
     }
 }
 
-const addBadge = async (folderPath: string) => {
-    await injectBuiltWithScript(folderPath, this.fileOps);
-    await addBuiltWithScript(folderPath, this.fileOps);
+const addBadge = async (folderPath: string, fileOps: FileOperations) => {
+    await injectBuiltWithScript(folderPath, fileOps);
+    await addBuiltWithScript(folderPath, fileOps);
 }
 
-const removeBadge = async (folderPath: string) => {
-    await removeBuiltWithScriptFromLayout(folderPath, this.fileOps);
-    await removeBuiltWithScript(folderPath, this.fileOps);
+const removeBadge = async (folderPath: string, fileOps: FileOperations) => {
+    await removeBuiltWithScriptFromLayout(folderPath, fileOps);
+    await removeBuiltWithScript(folderPath, fileOps);
 }
-
 
 const runPrepareStep = async (fileOps: FileOperations) => {
     // Preprocess the project
@@ -383,12 +369,12 @@ const categorizeFiles = (filePaths: string[]): { binaryFiles: string[], textFile
     return { binaryFiles, textFiles };
 }
 
-    private async processTextFilesBatch(filePaths: string[], baseDir: string): Promise < Record < string, FreestyleFile >> {
+const processTextFilesBatch = async (filePaths: string[], baseDir: string, fileOps: FileOperations): Promise<Record<string, FreestyleFile>> => {
     const promises = filePaths.map(async (fullPath) => {
         const relativePath = fullPath.replace(baseDir + '/', '');
 
         try {
-            const textContent = await this.editorEngine.sandbox.readFile(fullPath);
+            const textContent = await fileOps.readFile(fullPath);
 
             if (textContent !== null) {
                 return {
@@ -409,23 +395,23 @@ const categorizeFiles = (filePaths: string[]): { binaryFiles: string[], textFile
     });
 
     const results = await Promise.all(promises);
-    const files: Record<string, FreestyleFile> = { };
+    const files: Record<string, FreestyleFile> = {};
 
-for (const result of results) {
-    if (result) {
-        files[result.path] = result.file;
+    for (const result of results) {
+        if (result) {
+            files[result.path] = result.file;
+        }
     }
+
+    return files;
 }
 
-return files;
-    }
-
-const processBinaryFilesBatch = async (filePaths: string[], baseDir: string): Promise<Record<string, FreestyleFile>> => {
+const processBinaryFilesBatch = async (filePaths: string[], baseDir: string, fileOps: FileOperations): Promise<Record<string, FreestyleFile>> => {
     const promises = filePaths.map(async (fullPath) => {
         const relativePath = fullPath.replace(baseDir + '/', '');
 
         try {
-            const binaryContent = await this.editorEngine.sandbox.readBinaryFile(fullPath);
+            const binaryContent = await fileOps.readFile(fullPath);
 
             if (binaryContent) {
                 const base64String = btoa(
