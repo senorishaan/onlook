@@ -1,5 +1,3 @@
-import { z } from "zod";
-import { createTRPCRouter, publicProcedure } from "../../trpc";
 import { api } from '@/trpc/client';
 import { CUSTOM_OUTPUT_DIR, DefaultSettings, EXCLUDED_PUBLISH_DIRECTORIES, SUPPORTED_LOCK_FILES } from '@onlook/constants';
 import { addBuiltWithScript, injectBuiltWithScript, removeBuiltWithScript, removeBuiltWithScriptFromLayout } from '@onlook/growth';
@@ -16,6 +14,8 @@ import { isBinaryFile, isEmptyString, isNullOrUndefined, LogTimer, updateGitigno
 import {
     type FreestyleFile,
 } from 'freestyle-sandboxes';
+import { z } from "zod";
+import { createTRPCRouter, publicProcedure } from "../../trpc";
 
 enum PublishType {
     CUSTOM = 'custom',
@@ -52,7 +52,10 @@ export const publishRouter = createTRPCRouter({
             fileExists: (path: string) => this.editorEngine.sandbox.fileExists(path),
             copy: (source: string, destination: string, recursive?: boolean, overwrite?: boolean) => this.editorEngine.sandbox.copy(source, destination, recursive, overwrite),
             delete: (path: string, recursive?: boolean) => this.editorEngine.sandbox.delete(path, recursive),
-        };
+            readdir: (path: string) => this.editorEngine.sandbox.session.session!.fs.readdir(path),
+            readBinaryFile: (path: string) => this.editorEngine.sandbox.session.session!.fs.readBinaryFile(path),
+            runCommand: (command: string, callback: (output: string) => void) => this.editorEngine.sandbox.session.runCommand(command, callback),
+        } satisfies FileOperations;
 
         return await publish(projectId, updateState, fileOps, { buildScript, urls, options });
 
@@ -81,7 +84,7 @@ const publish = async (
         // Run the build script
         if (!options?.skipBuild) {
             updateState({ status: PublishStatus.LOADING, message: 'Creating optimized build...', progress: 20 });
-            await runBuildStep(buildScript, options);
+            await runBuildStep(buildScript, options, fileOps);
         } else {
             console.log('Skipping build');
         }
@@ -101,7 +104,7 @@ const publish = async (
 
         // Serialize the files for deployment
         const NEXT_BUILD_OUTPUT_PATH = `${CUSTOM_OUTPUT_DIR}/standalone`;
-        const files = await serializeFiles(NEXT_BUILD_OUTPUT_PATH);
+        const files = await serializeFiles(NEXT_BUILD_OUTPUT_PATH, fileOps);
 
         updateState({ status: PublishStatus.LOADING, message: 'Deploying project...', progress: 80 });
 
@@ -162,7 +165,7 @@ const runPrepareStep = async (fileOps: FileOperations) => {
     }
 }
 
-const runBuildStep = async (buildScript: string, options?: PublishOptions) => {
+const runBuildStep = async (buildScript: string, options?: PublishOptions, fileOps: FileOperations) => {
     // Use default build flags if no build flags are provided
     const buildFlagsString: string = isNullOrUndefined(options?.buildFlags)
         ? DefaultSettings.EDITOR_SETTINGS.buildFlags
@@ -181,7 +184,7 @@ const runBuildStep = async (buildScript: string, options?: PublishOptions) => {
         success: buildSuccess,
         error: buildError,
         output: buildOutput,
-    } = await this.editorEngine.sandbox.session.runCommand(BUILD_SCRIPT_NO_LINT, (output: string) => {
+    } = await fileOps.runCommand(BUILD_SCRIPT_NO_LINT, (output: string) => {
         console.log('Build output: ', output);
     });
 
@@ -195,7 +198,7 @@ const runBuildStep = async (buildScript: string, options?: PublishOptions) => {
 const postprocessNextBuild = async (fileOps: FileOperations): Promise<{
     success: boolean;
     error?: string;
-}> {
+}> => {
     const entrypointExists = await fileOps.fileExists(
         `${CUSTOM_OUTPUT_DIR}/standalone/server.js`,
     );
@@ -242,20 +245,16 @@ const postprocessNextBuild = async (fileOps: FileOperations): Promise<{
  * @param currentDir - The directory path to serialize
  * @returns Record of file paths to their content (base64 for binary, utf-8 for text)
  */
-const serializeFiles = async (currentDir: string): Promise<Record<string, FreestyleFile>> => {
+const serializeFiles = async (currentDir: string, fileOps: FileOperations): Promise<Record<string, FreestyleFile>> => {
     const timer = new LogTimer('File Serialization');
 
-    if (!this.editorEngine.sandbox.session.session) {
-        throw new Error('No sandbox session available');
-    }
-
     try {
-        const allFilePaths = await this.getAllFilePathsFlat(currentDir);
+        const allFilePaths = await getAllFilePathsFlat(currentDir, fileOps);
         timer.log(`File discovery completed - ${allFilePaths.length} files found`);
 
-        const filteredPaths = allFilePaths.filter(filePath => !this.shouldSkipFile(filePath));
+        const filteredPaths = allFilePaths.filter(filePath => !shouldSkipFile(filePath));
 
-        const { binaryFiles, textFiles } = this.categorizeFiles(filteredPaths);
+        const { binaryFiles, textFiles } = categorizeFiles(filteredPaths);
 
         const BATCH_SIZE = 50;
         const files: Record<string, FreestyleFile> = {};
@@ -264,7 +263,7 @@ const serializeFiles = async (currentDir: string): Promise<Record<string, Freest
             timer.log(`Processing ${textFiles.length} text files in batches of ${BATCH_SIZE}`);
             for (let i = 0; i < textFiles.length; i += BATCH_SIZE) {
                 const batch = textFiles.slice(i, i + BATCH_SIZE);
-                const batchFiles = await this.processTextFilesBatch(batch, currentDir);
+                const batchFiles = await processTextFilesBatch(batch, currentDir, fileOps);
                 Object.assign(files, batchFiles);
             }
             timer.log('Text files processing completed');
@@ -274,7 +273,7 @@ const serializeFiles = async (currentDir: string): Promise<Record<string, Freest
             timer.log(`Processing ${binaryFiles.length} binary files in batches of ${BATCH_SIZE}`);
             for (let i = 0; i < binaryFiles.length; i += BATCH_SIZE) {
                 const batch = binaryFiles.slice(i, i + BATCH_SIZE);
-                const batchFiles = await this.processBinaryFilesBatch(batch, currentDir);
+                const batchFiles = await processBinaryFilesBatch(batch, currentDir, fileOps);
                 Object.assign(files, batchFiles);
             }
             timer.log('Binary files processing completed');
@@ -294,7 +293,7 @@ const deployWeb = async (
     files: Record<string, FreestyleFile>,
     urls: string[],
     envVars?: Record<string, string>,
-): Promise<boolean> {
+): Promise<boolean> => {
     try {
         const res: DeploymentResponse = await api.domain.preview.publish.mutate({
             projectId,
@@ -313,14 +312,14 @@ const deployWeb = async (
     }
 }
 
-const getAllFilePathsFlat = async (rootDir: string): Promise<string[]> => {
+const getAllFilePathsFlat = async (rootDir: string, fileOps: FileOperations): Promise<string[]> => {
     const allPaths: string[] = [];
     const dirsToProcess = [rootDir];
 
     while (dirsToProcess.length > 0) {
         const currentDir = dirsToProcess.shift()!;
         try {
-            const entries = await this.editorEngine.sandbox.session.session!.fs.readdir(currentDir);
+            const entries = await fileOps.readdir(currentDir);
 
             for (const entry of entries) {
                 const fullPath = `${currentDir}/${entry.name}`;
@@ -411,7 +410,7 @@ const processBinaryFilesBatch = async (filePaths: string[], baseDir: string, fil
         const relativePath = fullPath.replace(baseDir + '/', '');
 
         try {
-            const binaryContent = await fileOps.readFile(fullPath);
+            const binaryContent = await fileOps.readBinaryFile(fullPath);
 
             if (binaryContent) {
                 const base64String = btoa(

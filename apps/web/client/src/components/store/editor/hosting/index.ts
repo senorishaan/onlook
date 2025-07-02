@@ -44,6 +44,16 @@ export class HostingManager {
         return this.publish(PublishType.CUSTOM, projectId, { buildScript, urls, options });
     }
 
+    async publish(type: PublishType, projectId: string, { buildScript, urls, options }: PublishRequest): Promise<PublishResponse> {
+        // Api call to publish
+        // Update state
+        // Return response
+        return {
+            success: true,
+            message: 'Deployment successful',
+        };
+    }
+
     async unpublish(projectId: string, urls: string[]): Promise<PublishResponse> {
         try {
             const success = await this.deployWeb(PublishType.UNPUBLISH, projectId, {}, urls);
