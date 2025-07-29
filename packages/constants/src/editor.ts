@@ -53,7 +53,7 @@ export const DefaultSettings = {
     },
     IMAGE_FOLDER: 'public',
     IMAGE_DIMENSION: { width: '100px', height: '100px' },
-    FONT_FOLDER: 'public/fonts',
+    FONT_FOLDER: 'fonts',
     FONT_CONFIG: 'app/fonts.ts',
     TAILWIND_CONFIG: 'tailwind.config.ts',
     CHAT_SETTINGS: {
@@ -75,3 +75,5 @@ export const PRELOAD_SCRIPT_SRC =
     'https://cdn.jsdelivr.net/gh/onlook-dev/onlook@main/apps/web/preload/dist/index.js';
 
 export const DEPRECATED_PRELOAD_SCRIPT_SRC = 'onlook-dev/web';
+
+export const PRELOAD_SCRIPT_FILE_NAME = `onlook-preload-script.js`;
